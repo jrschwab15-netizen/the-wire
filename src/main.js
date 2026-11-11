@@ -337,6 +337,7 @@ function tabbar() {
   const t = (id, ic, l) => '<button class="t ' + (tab === id ? 'on' : '') + '" data-a="tab" data-t="' + id + '"' + (tab === id ? ' aria-current="page"' : '') + '>' + ICON[ic] + l + '</button>';
   return '<nav class="tabs" aria-label="Main">' + t('home', 'home', 'Home') + t('schedule', 'cal', 'Schedule') + t('leagues', 'trophy', 'Leagues') + t('find', 'find', 'Find') + t('profile', 'me', 'You') + '<button class="go" data-a="compose" data-m="broadcast" aria-label="Play now">Play now</button>' + '</nav>';
 }
+const POWERED = '<p class="powered">Powered by <a href="https://openbeta.net" target="_blank" rel="noopener noreferrer">openbeta</a></p>';
 function viewAuth() {
   return '<section class="pad auth"><h1 class="hero">Who wants to play?</h1><p class="lede">Find a game in any sport, fill the open spot, run your league. Free, no ads.</p>' +
     '<button class="btn block" data-a="google"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.2-4.7 3.2-8z"/><path fill="#34A853" d="M12 23c2.9 0 5.400-1 7.200-2.700l-3.600-2.700c-1 .7-2.200 1.100-3.600 1.100-2.800 0-5.200-1.900-6-4.400H2.300v2.800A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M6 14.300a6.600 6.600 0 0 1 0-4.200V7.300H2.300a11 11 0 0 0 0 9.800L6 14.300z"/><path fill="#EA4335" d="M12 5.400c1.600 0 3 .5 4.100 1.600l3.100-3.100A11 11 0 0 0 2.300 7.300L6 10.100c.8-2.500 3.200-4.700 6-4.700z"/></svg>Continue with Google</button>' +
@@ -347,7 +348,7 @@ function viewAuth() {
         '<button class="btn solid block" data-a="verify"' + (auth.busy ? ' disabled' : '') + '>Sign in</button><button class="btn ghost block" style="margin-top:8px" data-a="authback">Use a different email</button></div>'
       : '<label class="field" style="margin-top:0"><span class="lab">Email</span><input class="inp" id="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" data-bind="auth.email" value="' + esc(auth.email) + '"></label>' +
         '<button class="btn solid block" data-a="sendlink"' + (auth.busy ? ' disabled' : '') + '>' + (auth.busy ? 'Sending' : 'Email me a sign-in link') + '</button>') +
-    '<p class="hint" style="margin-top:18px">No password to remember. Your email is only used to sign you in.</p></section>';
+    '<p class="hint" style="margin-top:18px">No password to remember. Your email is only used to sign you in.</p>' + POWERED + '</section>';
 }
 function viewHome() {
   const f = first(S.me.name) === 'Someone' ? 'there' : first(S.me.name), next = myUpcoming()[0], open = nearbyOpen().slice(0, 4), act = S.inbox.slice(0, 4);
@@ -448,7 +449,7 @@ function viewProfile() {
     '<span class="lab" style="margin-top:12px">Days you can play</span><div class="chips">' + DOW.map((d, i) => '<button class="chip ' + (m.days.includes(i) ? 'on' : '') + '" data-a="dtog" data-d="' + i + '" aria-pressed="' + m.days.includes(i) + '">' + d + '</button>').join('') + '</div>' +
     '<label class="field"><span class="lab">Distance: <span id="rl">' + m.radius + ' miles</span></span><input type="range" min="5" max="50" step="5" value="' + m.radius + '" data-bind="me.radius" data-num="1" data-live="rl" data-unit=" miles"></label>' +
     '<p class="hint">Quiet hours are 9 PM to 7 AM Eastern, unless a game starts within two hours.</p>' +
-    '<div style="margin-top:22px;display:grid;gap:10px"><p class="hint">Signed in as ' + esc(EMAIL) + '</p><button class="btn block ghost" data-a="signout">Sign out</button></div></section>';
+    '<div style="margin-top:22px;display:grid;gap:10px"><p class="hint">Signed in as ' + esc(EMAIL) + '</p><button class="btn block ghost" data-a="signout">Sign out</button></div>' + POWERED + '</section>';
 }
 
 /* ===== sheets ===== */
