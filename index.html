@@ -178,6 +178,39 @@ a.btn{display:block;text-align:center;text-decoration:none;color:inherit;line-he
 .facts a{color:var(--ball);font-weight:600}
 .note-row.read .pulse{background:var(--rail);animation:none;box-shadow:none}
 
+
+/* social: chat, friends, feed */
+.hbtns{display:flex;gap:8px;align-items:center}
+.ibtn{position:relative;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--rail);background:var(--snow)}
+.ibtn svg{width:20px;height:20px}
+.bdg{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--ball);color:var(--on-ball);font-size:11px;font-weight:800;display:grid;place-items:center;line-height:1}
+.tabs button.t{position:relative}
+.tabs button.t .bdg{top:0;right:calc(50% - 24px)}
+.who{display:flex;gap:10px;align-items:center;flex:1;min-width:0;cursor:pointer}
+.who small{display:block;color:var(--ink2);font-size:13px}
+.chat{display:flex;flex-direction:column;gap:6px;padding:6px 0 10px}
+.bub{max-width:82%;padding:8px 12px;border-radius:16px;background:var(--panel);border:1px solid var(--rail);align-self:flex-start;overflow-wrap:anywhere;white-space:pre-wrap}
+.bub.me{align-self:flex-end;background:var(--ink);color:var(--snow);border-color:var(--ink)}
+.bub small{display:block;font-size:11px;opacity:.65;margin-top:2px}
+.inv{border:1px solid var(--rail);background:var(--snow);color:var(--ink);border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;white-space:normal}
+.inv b{display:block}
+.inv small{display:block;opacity:1;color:var(--ink2);font-size:12px;margin:0}
+.inv span{display:block;font-weight:700;color:var(--ball);font-size:13px;margin-top:2px}
+.quick,.invlist{margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;max-height:132px;overflow:auto}
+.crow{cursor:pointer;border-bottom:1px solid var(--rail);padding:11px 0}
+.crow .clip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+.udot{width:10px;height:10px;border-radius:50%;background:var(--ball);flex:none}
+.composer{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--rail);border-radius:99px;padding:8px 16px 8px 8px;color:var(--ink2);margin:10px 0 4px}
+.post .pbody{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.pphoto{display:block;width:100%;max-height:480px;object-fit:cover;border-radius:8px;margin:8px 0;background:var(--rail)}
+.pphoto.ph{height:220px}
+.pacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pacts .chip{padding:6px 12px}
+.cm{padding:10px 0;border-top:1px solid var(--rail)}
+.cm p{overflow-wrap:anywhere;margin-left:38px}
+.cm .acts{margin-left:38px}
+.v-feed .pad{max-width:640px}
+
 /* desktop and wide tablets: sidebar nav, roomier content, centered dialogs */
 @media (hover:hover){.game:hover{border-color:var(--steel)}.chip:hover:not(.on),.rb:hover:not(.on):not([disabled]),.btn:hover:not(.solid):not([disabled]),.note-row:hover{border-color:var(--steel)}.btn.solid:hover{opacity:.9}}
 @media (min-width:800px){
@@ -200,6 +233,8 @@ a.btn{display:block;text-align:center;text-decoration:none;color:inherit;line-he
   .v-find .pad>.two,.v-find .pad>.toggle{max-width:520px}
   .v-profile .pad{max-width:680px}
   .hero{font-size:44px}
+  .shell.in .tabs button.t .bdg{top:50%;right:12px;transform:translateY(-50%)}
+  .shell.in main.v-feed{max-width:680px}
   .backdrop{align-items:center}
   .panel{width:min(680px,92vw);max-height:88dvh;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)}
   .sfoot{padding-bottom:14px}

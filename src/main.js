@@ -31,7 +31,8 @@ const store = {get(k) { try { return sessionStorage.getItem(k); } catch (e) { re
 /* ===== state ===== */
 let UID = null, EMAIL = '', SPORTS = {}, S = null, booted = false, loading = false;
 let dirty = false; // true while the player has profile edits that have not reached the database yet
-let tab = 'home', sheet = null, seg = 'mine', draft = null, nc = null, nv = null, nl = null, tf = {name:''}, lf = null, rf = null, rs = null, rd = null, sf = null, bk = null, fseg = 'games', pf = {sport:'all'}, pushOn = false, channel = null;
+let tab = 'home', sheet = null, seg = 'mine', draft = null, nc = null, nv = null, nl = null, tf = {name:''}, lf = null, rf = null, rs = null, rd = null, sf = null, bk = null, fseg = 'games', pf = {sport:'all', group:'near'}, pushOn = false, channel = null;
+let FD = {posts:[], likes:{}, cmts:{}, urls:{}, seg:'friends', loaded:false, tried:false, cd:null}, MS = {}, pst = null;
 let F = {sport:'all', day:'any', level:'any', dist:25, open:true};
 let auth = {email:'', code:'', sent:false, busy:false};
 
@@ -61,14 +62,14 @@ async function loadAll() {
   if (!UID) return;
   loading = true;
   const since = new Date(Date.now() - 4 * HOUR).toISOString();
-  const [sp, pr, st, co, mb, ga, no, wa, ps, ve, le, lt, tm, fx, gr, ro, pst, vs, vb, vm] = await Promise.all([
+  const [sp, pr, st, co, mb, ga, no, wa, ps, ve, le, lt, tm, fx, gr, ro, pstt, vs, vb, vm, frs, ths, bls] = await Promise.all([
     sb.from('sports').select('*').order('sort'),
     sb.from('profiles').select('id,name,area,lat,lng,onboarded'),
     sb.from('player_settings').select('age_band,days,radius').eq('id', UID).maybeSingle(),
     sb.from('communities').select('id,name,type,area,lat,lng,sports,created_by').order('name'),
     sb.from('memberships').select('community_id,player_id'),
     sb.from('games').select('*, rsvps(player_id,status), messages(id,player_id,body,is_system,created_at)').gt('starts_at', since).order('starts_at'),
-    sb.from('notifications').select('id,game_id,kind,body,created_at,read_at').eq('player_id', UID).order('created_at', {ascending:false}).limit(20),
+    sb.from('notifications').select('id,game_id,kind,body,created_at,read_at,thread_id,post_id').eq('player_id', UID).order('created_at', {ascending:false}).limit(20),
     sb.from('watchers').select('game_id').eq('player_id', UID),
     sb.from('player_sports').select('player_id,sport_id,level'),
     sb.from('venues').select('id,name,sports,area,lat,lng,booking_url,verified').order('name'),
@@ -81,10 +82,13 @@ async function loadAll() {
     sb.from('player_stats').select('player_id,sport,played,hosted,wins,losses,ties'),
     sb.from('venue_slots').select('id,venue_id,resource,starts_at,duration_min,capacity,note').gt('starts_at', new Date(Date.now() - HOUR).toISOString()).order('starts_at'),
     sb.from('slot_bookings').select('slot_id,booked_by,party_size,game_id'),
-    sb.from('venue_managers').select('venue_id,player_id')
+    sb.from('venue_managers').select('venue_id,player_id'),
+    sb.from('friendships').select('id,requester,addressee,status'),
+    sb.from('dm_threads').select('id,user_a,user_b,a_read_at,b_read_at,last_at,last_body,last_sender'),
+    sb.from('blocks').select('blocked')
   ]);
   loading = false;
-  const err = [sp, pr, st, co, mb, ga, no, wa, ps, ve, le, lt, tm, fx, gr, ro, pst, vs, vb, vm].find(r => r.error);
+  const err = [sp, pr, st, co, mb, ga, no, wa, ps, ve, le, lt, tm, fx, gr, ro, pstt, vs, vb, vm, frs, ths, bls].find(r => r.error);
   if (err) { fail(err.error, 'Could not load. Check your connection'); if (!S) return; return; }
   SPORTS = {}; sp.data.forEach(s => { SPORTS[s.id] = s; });
   const players = {};
@@ -106,12 +110,19 @@ async function loadAll() {
     return {id:r.id, sport:r.sport, venueId:r.venue_id, hostId:r.host_id, communityId:r.community_id, place:r.place, lat:r.lat, lng:r.lng, start, dur:r.duration_min, end:start + r.duration_min * 60000, spots:r.spots, levelMin:r.level_min, levelMax:r.level_max, kind:r.kind, leagueId:r.league_id, note:r.note, recurring:r.recurring, ageBand:r.age_band, rsvps:rs,
       thread:(r.messages || []).sort((a, b) => a.id - b.id).map(m => ({by:m.player_id, text:m.body, t:Date.parse(m.created_at), sys:m.is_system})), watching:watch.has(r.id)};
   });
-  const stats = {}; pst.data.forEach(x => { (stats[x.player_id] = stats[x.player_id] || {})[x.sport] = x; });
+  const stats = {}; pstt.data.forEach(x => { (stats[x.player_id] = stats[x.player_id] || {})[x.sport] = x; });
   const results = {}; gr.data.forEach(x => { results[x.game_id] = x; }); const bookings = {}; vb.data.forEach(x => { bookings[x.slot_id] = x; });
-  S = {me, players, comms:co.data, venues:ve.data, leagues:le.data, teams:lt.data, members:tm.data, fixtures:fx.data, results, rounds:ro.data, stats, slots:vs.data, bookings, mgrs:vm.data, games, inbox:no.data.map(n => ({id:n.id, t:Date.parse(n.created_at), msg:n.body, gid:n.game_id, read:!!n.read_at}))};
+  S = {me, players, comms:co.data, venues:ve.data, leagues:le.data, teams:lt.data, members:tm.data, fixtures:fx.data, results, rounds:ro.data, stats, slots:vs.data, bookings, mgrs:vm.data, games, fr:frs.data, threads:ths.data, blocks:bls.data.map(b => b.blocked), inbox:no.data.map(n => ({id:n.id, t:Date.parse(n.created_at), msg:n.body, gid:n.game_id, tid:n.thread_id, pid:n.post_id, kind:n.kind, read:!!n.read_at}))};
 }
 let reloadT = null;
-function refreshSoon(ms) { clearTimeout(reloadT); reloadT = setTimeout(async () => { await loadAll(); if (S) render(); }, ms == null ? 350 : ms); }
+function refreshSoon(ms) { clearTimeout(reloadT); reloadT = setTimeout(async () => { await loadAll(); await afterLoad(); if (S) render(); }, ms == null ? 350 : ms); }
+let feedT = null;
+function feedSoon() { clearTimeout(feedT); feedT = setTimeout(async () => { if (FD.loaded) { await loadFeed(); if (S) render(); } }, 500); }
+async function afterLoad() {
+  if (!S) return;
+  if (sheet && sheet.name === 'chat') { const t = threadWith(sheet.id); if (t) { await loadMsgs(t.id); markRead(t); } }
+  if (FD.loaded) await loadFeed();
+}
 function subscribe() {
   if (channel) sb.removeChannel(channel);
   const any = t => ({event:'*', schema:'public', table:t});
@@ -126,6 +137,12 @@ function subscribe() {
     .on('postgres_changes', any('game_results'), () => refreshSoon())
     .on('postgres_changes', any('venue_slots'), () => refreshSoon())
     .on('postgres_changes', any('slot_bookings'), () => refreshSoon())
+    .on('postgres_changes', any('friendships'), () => refreshSoon())
+    .on('postgres_changes', any('dm_threads'), () => refreshSoon())
+    .on('postgres_changes', any('dm_messages'), () => refreshSoon())
+    .on('postgres_changes', any('posts'), () => feedSoon())
+    .on('postgres_changes', any('post_comments'), () => feedSoon())
+    .on('postgres_changes', any('post_likes'), () => feedSoon())
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'notifications', filter:'player_id=eq.' + UID}, p => { if (p.new && p.new.body) toast(p.new.body); refreshSoon(); })
     .subscribe();
 }
@@ -312,7 +329,9 @@ const ICON = {
   home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
   cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>',
   find:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>',
-  me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20c1.2-3.6 4-5.2 7.5-5.2s6.3 1.6 7.5 5.2"/></svg>'
+  me:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20c1.2-3.6 4-5.2 7.5-5.2s6.3 1.6 7.5 5.2"/></svg>',
+  feed:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3.5"/></svg>',
+  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1H10l-4.5 3.5V17H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z"/></svg>'
 };
 const av = (p, cls) => '<span class="av ' + (cls || '') + '" style="--h:' + hue(p.name || p.id) + '">' + esc(inits(p.name || 'You')) + '</span>';
 const empty = (t, s) => '<div class="empty"><b>' + esc(t) + '</b>' + esc(s) + '</div>';
@@ -332,10 +351,11 @@ function gameCard(g) {
     '<div class="meta">' + (g.kind === 'broadcast' ? '<span class="tag live">Play now</span>' : '') + (g.recurring ? '<span class="tag">Every week</span>' : '') + (c ? '<span class="tag">' + esc(c.name) + '</span>' : '') + '<span class="tag">' + esc(SPORTS[g.sport].short) + '</span>' + (g.leagueId && L(g.leagueId) ? '<span class="tag">' + esc(L(g.leagueId).name) + '</span>' : '') + '</div></div></div>' +
     dots(g) + rsvpRow(g) + '</article>';
 }
-function header() { return '<header class="top"><div class="mark">' + LOGO + 'the wire</div>' + (S ? '<button data-a="tab" data-t="profile" aria-label="Your profile">' + av(S.me, '') + '</button>' : '') + '</header>'; }
+function header() { const u = S ? unreadCount() : 0; return '<header class="top"><div class="mark">' + LOGO + 'the wire</div>' + (S ? '<div class="hbtns"><button class="ibtn" data-a="inbox" aria-label="Chats' + (u ? ', ' + u + ' unread' : '') + '">' + ICON.chat + (u ? '<span class="bdg">' + u + '</span>' : '') + '</button><button data-a="tab" data-t="profile" aria-label="Your profile">' + av(S.me, '') + '</button></div>' : '') + '</header>'; }
 function tabbar() {
-  const t = (id, ic, l) => '<button class="t ' + (tab === id ? 'on' : '') + '" data-a="tab" data-t="' + id + '"' + (tab === id ? ' aria-current="page"' : '') + '>' + ICON[ic] + l + '</button>';
-  return '<nav class="tabs" aria-label="Main">' + t('home', 'home', 'Home') + t('schedule', 'cal', 'Schedule') + t('leagues', 'trophy', 'Leagues') + t('find', 'find', 'Find') + t('profile', 'me', 'You') + '<button class="go" data-a="compose" data-m="broadcast" aria-label="Play now">Play now</button>' + '</nav>';
+  const cur = tab === 'schedule' ? 'home' : tab, rq = reqIn().length;
+  const t = (id, ic, l, n) => '<button class="t ' + (cur === id ? 'on' : '') + '" data-a="tab" data-t="' + id + '"' + (cur === id ? ' aria-current="page"' : '') + '>' + ICON[ic] + l + (n ? '<span class="bdg" aria-label="' + n + ' new">' + n + '</span>' : '') + '</button>';
+  return '<nav class="tabs" aria-label="Main">' + t('home', 'home', 'Home') + t('feed', 'feed', 'Feed') + t('leagues', 'trophy', 'Leagues') + t('find', 'find', 'Find', rq) + t('profile', 'me', 'You') + '<button class="go" data-a="compose" data-m="broadcast" aria-label="Play now">Play now</button>' + '</nav>';
 }
 const POWERED = '<p class="powered">Powered by <a href="https://openbeta.net" target="_blank" rel="noopener noreferrer">openbeta</a></p>';
 function viewAuth() {
@@ -351,11 +371,12 @@ function viewAuth() {
     '<p class="hint" style="margin-top:18px">No password to remember. Your email is only used to sign you in.</p>' + POWERED + '</section>';
 }
 function viewHome() {
-  const f = first(S.me.name) === 'Someone' ? 'there' : first(S.me.name), next = myUpcoming()[0], open = nearbyOpen().slice(0, 4), act = S.inbox.slice(0, 4);
+  const f = first(S.me.name) === 'Someone' ? 'there' : first(S.me.name), up = myUpcoming(), open = nearbyOpen().slice(0, 4), act = S.inbox.slice(0, 4);
   return '<section class="pad"><p class="kicker">Hey ' + esc(f) + '</p><h1 class="hero">Who wants to play?</h1>' +
     '<button class="xl" data-a="compose" data-m="broadcast"><span>Play now</span><small>Ping nearby people who play your sport</small></button>' +
-    (act.length ? '<h2 class="h2">Activity</h2>' + act.map(a => '<div class="note-row' + (a.read ? ' read' : '') + '"' + (a.gid && gm(a.gid) ? ' data-a="game" data-id="' + a.gid + '"' : '') + '><span class="pulse"></span><div><b>' + esc(a.msg) + '</b><small>' + ago(a.t) + '</small></div></div>').join('') : '') +
-    '<h2 class="h2">Your next game</h2>' + (next ? gameCard(next) : empty('Nothing on your schedule', 'Join a game below or post one with Play now.')) +
+    (act.length ? '<h2 class="h2">Activity</h2>' + act.map(a => '<div class="note-row' + (a.read ? ' read' : '') + '"' + actAttr(a) + '><span class="pulse"></span><div><b>' + esc(a.msg) + '</b><small>' + ago(a.t) + '</small></div></div>').join('') : '') +
+    '<h2 class="h2">Your games</h2>' + (up.length ? up.slice(0, 3).map(gameCard).join('') : empty('Nothing on your schedule', 'Join a game below or post one with Play now.')) +
+    '<button class="btn block ghost" style="margin-bottom:6px" data-a="tab" data-t="schedule">Full schedule' + (up.length > 3 ? ' (' + up.length + ' games)' : '') + '</button>' +
     (myBookings().filter(s => venue(s.venue_id)).length ? '<h2 class="h2">Your bookings</h2>' + myBookings().filter(s => venue(s.venue_id)).map(s => { const v = venue(s.venue_id), t = Date.parse(s.starts_at); return '<div class="note-row" data-a="venue" data-id="' + v.id + '"><span class="pulse"></span><div><b>' + esc(s.resource) + ' at ' + esc(v.name) + '</b><small>' + dayLabel(t) + ', ' + timeLabel(t) + '</small></div></div>'; }).join('') : '') +
     '<h2 class="h2">Open near you</h2>' + (open.length ? open.map(gameCard).join('') : empty('Nothing open that fits right now', 'Post a game and the right people get pinged.')) +
     '<button class="btn block ghost" style="margin-top:10px" data-a="invite">Invite someone to play</button></section>';
@@ -401,11 +422,25 @@ function sportChips(key, obj, act) {
   const sp = onSports(), c = (v, l) => '<button class="chip ' + (obj[key] === v ? 'on' : '') + '" data-a="' + act + '" data-v="' + v + '">' + l + '</button>';
   return '<div class="chips" style="margin:10px 0">' + c('all', 'All sports') + sp.map(s => c(s.id, esc(s.short))).join('') + '</div>';
 }
+function personRow(p, right, subline) {
+  return '<div class="card" style="padding:10px 12px"><div class="pl"><span class="who" data-a="player" data-id="' + p.id + '"><span>' + av(p, 'sm') + '</span><span style="min-width:0"><b>' + esc(p.name || 'Player') + '</b><small>' + subline + '</small></span></span>' + right + '</div></div>';
+}
 function findPeople() {
-  const list = Object.values(S.players).filter(p => p.id !== UID && p.onboarded && p.name && Object.keys(p.sp).length && (pf.sport === 'all' || p.sp[pf.sport] != null))
+  const g = pf.group, inn = reqIn(), out = reqOut(), fr = friendIds();
+  const gc = (id, l, n) => '<button class="chip ' + (g === id ? 'on' : '') + '" data-a="pgroup" data-v="' + id + '">' + l + (n ? ' (' + n + ')' : '') + '</button>';
+  const head = '<div class="chips" style="margin:10px 0">' + gc('near', 'Nearby') + gc('friends', 'Friends', fr.length) + gc('req', 'Requests', inn.length) + '</div>';
+  if (g === 'friends') {
+    return head + (fr.length ? fr.map(id => { const p = P(id); return personRow(p, '<button class="btn" data-a="chat" data-id="' + id + '">Message</button>', esc(sportList(p).map(x => x.short).join(', ') || p.area || '')); }).join('')
+      : empty('No friends yet', 'Add people from Nearby after you play together, or invite someone.')) + '<button class="btn block" style="margin-top:10px" data-a="invite">Invite someone to play</button>';
+  }
+  if (g === 'req') {
+    return head + (inn.length ? '<h2 class="h2" style="margin-top:8px">Wants to be friends</h2>' + inn.map(f => personRow(P(f.requester), '<button class="btn solid" data-a="fracc" data-id="' + f.id + '">Accept</button><button class="btn ghost" data-a="frno" data-id="' + f.id + '">Decline</button>', esc(P(f.requester).area || ''))).join('') : '<p class="hint">No requests waiting.</p>') +
+      (out.length ? '<h2 class="h2">Sent by you</h2>' + out.map(f => personRow(P(f.addressee), '<button class="btn ghost" data-a="frno" data-id="' + f.id + '">Cancel</button>', 'Waiting for an answer')).join('') : '');
+  }
+  const list = Object.values(S.players).filter(p => p.id !== UID && p.onboarded && p.name && !blockedBy(p.id) && Object.keys(p.sp).length && (pf.sport === 'all' || p.sp[pf.sport] != null))
     .map(p => ({p, d:dist(S.me, p)})).filter(x => x.d <= 50).sort((a, b) => a.d - b.d);
-  return sportChips('sport', pf, 'pfilt') + '<h2 class="h2">' + list.length + (list.length === 1 ? ' person' : ' people') + ' within 50 miles</h2>' +
-    (list.length ? list.map(x => '<div class="card" data-a="player" data-id="' + x.p.id + '" style="cursor:pointer"><div class="pl">' + av(x.p, 'sm') + '<div><b>' + esc(x.p.name) + '</b><small>' + esc(sportList(x.p).map(s => s.short + ', ' + s.levels[x.p.sp[s.id]]).join(' / ')) + '</small><small>' + esc(x.p.area) + ', ' + (x.d < 1 ? 'under 1 mile' : Math.round(x.d) + ' miles') + '</small></div></div></div>').join('')
+  return head + sportChips('sport', pf, 'pfilt') + '<h2 class="h2">' + list.length + (list.length === 1 ? ' person' : ' people') + ' within 50 miles</h2>' +
+    (list.length ? list.map(x => '<div class="card" data-a="player" data-id="' + x.p.id + '" style="cursor:pointer"><div class="pl">' + av(x.p, 'sm') + '<div><b>' + esc(x.p.name) + (isFriend(x.p.id) ? ' <span class="tag">Friend</span>' : '') + '</b><small>' + esc(sportList(x.p).map(s => s.short + ', ' + s.levels[x.p.sp[s.id]]).join(' / ')) + '</small><small>' + esc(x.p.area) + ', ' + (x.d < 1 ? 'under 1 mile' : Math.round(x.d) + ' miles') + '</small></div></div></div>').join('')
       : empty('Nobody here yet', 'The more people you bring in, the better this gets.')) +
     '<button class="btn block" style="margin-top:10px" data-a="invite">Invite someone to play</button>';
 }
@@ -542,7 +577,7 @@ function sheetPings(g, pinged) {
   return sheetShell('Game posted', body, '<button class="btn solid block" data-a="close">Done</button>');
 }
 function renderSheet() {
-  const root = $('#sheet-root'), prev = root.querySelector('.sbody'), top = prev ? prev.scrollTop : 0;
+  const root = $('#sheet-root'), prev = root.querySelector('.sbody'), top = prev ? prev.scrollTop : 0, atBottom = !!prev && prev.scrollTop + prev.clientHeight >= prev.scrollHeight - 60;
   let html = '';
   if (S && sheet) {
     const g = sheet.id ? gm(sheet.id) : null;
@@ -560,10 +595,16 @@ function renderSheet() {
     else if (sheet.name === 'venue') { const v = venue(sheet.id); if (v) html = sheetVenue(v); else sheet = null; }
     else if (sheet.name === 'book' && bk) { const s2 = S.slots.find(x => x.id === sheet.id); if (s2) html = sheetBook(s2); else sheet = null; }
     else if (sheet.name === 'pings' && g) html = sheetPings(g, sheet.pinged);
+    else if (sheet.name === 'inbox') html = sheetInbox();
+    else if (sheet.name === 'chat') html = sheetChat(sheet.id);
+    else if (sheet.name === 'post' && pst) html = sheetPost();
+    else if (sheet.name === 'comments') { html = sheetComments(sheet.id); if (!html) sheet = null; }
+    else if (sheet.name === 'flag') html = sheetFlag();
     else sheet = null;
   }
   root.innerHTML = html; document.body.classList.toggle('lock', !!html);
   const nb = root.querySelector('.sbody'); if (nb && prev) nb.scrollTop = top;
+  if (nb && sheet && sheet.name === 'chat' && (sheet.stick || atBottom)) { nb.scrollTop = nb.scrollHeight; sheet.stick = false; }
 }
 function render() {
   $('#app').className = 'shell ' + (booted && UID && S ? 'in' : 'out');
@@ -572,7 +613,7 @@ function render() {
   if (!booted) $('#app').innerHTML = header() + '<main><div class="pad"><p class="hint" style="margin-top:40px">Loading</p></div></main>';
   else if (!UID || !S) { $('#app').innerHTML = header() + '<main>' + (UID ? '<div class="pad"><p class="hint" style="margin-top:40px">' + (loading ? 'Loading' : 'Could not load. Pull to refresh.') + '</p></div>' : viewAuth()) + '</main>'; $('#sheet-root').innerHTML = ''; document.body.classList.remove('lock'); }
   else {
-    const v = {home:viewHome, schedule:viewSchedule, leagues:viewLeagues, find:viewFind, profile:viewProfile}[tab]();
+    const v = {home:viewHome, schedule:viewSchedule, feed:viewFeed, leagues:viewLeagues, find:viewFind, profile:viewProfile}[tab]();
     $('#app').innerHTML = header() + '<main class="v-' + tab + '">' + v + '</main>' + tabbar();
     renderSheet();
   }
@@ -864,9 +905,19 @@ function statsFor(pid) {
   }).join('');
 }
 function sheetPlayer(pid) {
-  const p = P(pid), d = Math.round(dist(S.me, p));
-  const body = '<div class="profile-head">' + av(p, 'lg') + '<div><h1 style="font-size:24px;font-weight:800">' + esc(p.name || 'Player') + '</h1><div class="hint">' + esc(p.area || '') + (pid === UID ? '' : ', ' + d + ' miles away') + '</div></div></div>' +
-    '<h2 class="h2">Stats</h2>' + statsFor(pid);
+  const p = P(pid), d = Math.round(dist(S.me, p)), me = pid === UID, r = me ? null : rel(pid), blocked = !me && blockedBy(pid);
+  let acts = '';
+  if (!me && blocked) acts = '<p class="hint">You blocked this person. They cannot message you or see your posts.</p><div class="acts"><button class="btn" data-a="unblock" data-id="' + pid + '">Unblock</button></div>';
+  else if (!me) {
+    const fb = !r ? '<button class="btn solid" data-a="addfr" data-id="' + pid + '">Add friend</button>'
+      : r.status === 'accepted' ? '<button class="btn" data-a="unfr" data-id="' + r.id + '">' + (sheet.cfr ? 'Tap again to remove' : 'Friends') + '</button>'
+      : r.requester === UID ? '<button class="btn ghost" data-a="frno" data-id="' + r.id + '">Request sent. Cancel</button>'
+      : '<button class="btn solid" data-a="fracc" data-id="' + r.id + '">Accept request</button><button class="btn ghost" data-a="frno" data-id="' + r.id + '">Decline</button>';
+    acts = '<div class="acts"><button class="btn solid" data-a="chat" data-id="' + pid + '">Message</button><button class="btn" data-a="askplay" data-id="' + pid + '">Ask to play</button>' + fb + '</div>';
+  }
+  const body = '<div class="profile-head">' + av(p, 'lg') + '<div><h1 style="font-size:24px;font-weight:800">' + esc(p.name || 'Player') + '</h1><div class="hint">' + esc(p.area || '') + (me ? '' : ', ' + d + ' miles away') + '</div>' + (!me && r && r.status === 'accepted' ? '<span class="tag" style="margin-top:6px">Friend</span>' : '') + '</div></div>' + acts +
+    '<h2 class="h2">Stats</h2>' + statsFor(pid) +
+    (me || blocked ? '' : '<div class="acts" style="margin-top:22px"><button class="btn ghost" data-a="blockuser" data-id="' + pid + '">' + (sheet.cb === pid ? 'Tap again to block' : 'Block') + '</button><button class="btn ghost" data-a="flag" data-t="user" data-id="' + pid + '">Report</button></div>');
   return sheetShell(p.name || 'Player', body, '');
 }
 function slotRow(s, v) {
@@ -902,9 +953,263 @@ function sheetBook(s) {
 }
 function myBookings() { return S.slots.filter(s => S.bookings[s.id] && S.bookings[s.id].booked_by === UID && Date.parse(s.starts_at) > Date.now()); }
 
+/* ===== friends, chat, feed ===== */
+const rel = id => S.fr.find(f => f.requester === id || f.addressee === id);
+const isFriend = id => { const f = rel(id); return !!f && f.status === 'accepted'; };
+const friendIds = () => S.fr.filter(f => f.status === 'accepted').map(f => f.requester === UID ? f.addressee : f.requester).filter(id => !blockedBy(id));
+const reqIn = () => S.fr.filter(f => f.status === 'pending' && f.addressee === UID && !blockedBy(f.requester));
+const reqOut = () => S.fr.filter(f => f.status === 'pending' && f.requester === UID);
+const blockedBy = id => S.blocks.includes(id);
+const pair = id => UID < id ? [UID, id] : [id, UID];
+const threadWith = id => { const [a, b] = pair(id); return S.threads.find(t => t.user_a === a && t.user_b === b); };
+const otherOf = t => t.user_a === UID ? t.user_b : t.user_a;
+const myRead = t => t.user_a === UID ? t.a_read_at : t.b_read_at;
+const isUnread = t => !!t.last_sender && t.last_sender !== UID && (!myRead(t) || Date.parse(t.last_at) > Date.parse(myRead(t)));
+const unreadCount = () => S.threads.filter(t => isUnread(t) && !blockedBy(otherOf(t))).length;
+const stampLabel = iso => { const t = Date.parse(iso); return (dayLabel(t) === 'Today' ? '' : dayLabel(t) + ', ') + timeLabel(t); };
+
+function actAttr(a) {
+  if (a.tid) { const t = S.threads.find(x => x.id === a.tid); return t ? ' data-a="chat" data-id="' + otherOf(t) + '"' : ''; }
+  if (a.pid) return ' data-a="cmts" data-id="' + a.pid + '"';
+  if (a.kind === 'friend') return ' data-a="tab" data-t="find" data-friends="1"';
+  return a.gid && gm(a.gid) ? ' data-a="game" data-id="' + a.gid + '"' : '';
+}
+
+/* friends and blocks */
+async function addFriend(id) {
+  const {data, error} = await sb.from('friendships').insert({addressee:id}).select('id,requester,addressee,status').single();
+  if (error) { await loadAll(); render(); fail(error, 'Could not send the request'); return; }
+  S.fr.push(data); render(); toast('Friend request sent');
+}
+async function answerFriend(id, yes) {
+  const r = yes ? await sb.from('friendships').update({status:'accepted'}).eq('id', id) : await sb.from('friendships').delete().eq('id', id);
+  if (fail(r.error, yes ? 'Could not accept' : 'Could not do that')) return;
+  await loadAll(); render(); if (yes) toast('You are friends');
+}
+async function blockUser(id) {
+  if (sheet.cb !== id) { sheet.cb = id; render(); return; }
+  const {error} = await sb.from('blocks').insert({blocked:id}); if (fail(error, 'Could not block')) return;
+  await loadAll(); if (FD.loaded) await loadFeed(); sheet = null; render(); toast('Blocked. They cannot message you or see your posts');
+}
+async function unblockUser(id) { const {error} = await sb.from('blocks').delete().eq('blocked', id); if (fail(error, 'Could not unblock')) return; await loadAll(); if (FD.loaded) await loadFeed(); render(); toast('Unblocked'); }
+function flagOpen(type, id) { sub('flag', id, {ftype:type}); }
+function sheetFlag() {
+  const body = '<p class="hint" style="margin-bottom:10px">Tell us what is wrong. A person reads every report. The other person is not told who reported.</p><div class="chips">' +
+    ['Spam', 'Harassment or threats', 'Inappropriate photo or words', 'Pretending to be someone', 'Something else'].map(r => '<button class="chip" data-a="flagsend" data-r="' + r + '">' + r + '</button>').join('') + '</div>';
+  return sheetShell('Report', body, '');
+}
+async function sendFlag(reason) {
+  const {error} = await sb.from('reports').insert({target_type:sheet.ftype, target_id:String(sheet.id), reason}); if (fail(error, 'Could not send the report')) return;
+  closeSheet(); toast('Thanks. We will take a look');
+}
+
+/* chat */
+async function loadMsgs(tid) {
+  const {data, error} = await sb.from('dm_messages').select('id,sender_id,body,game_id,created_at').eq('thread_id', tid).order('id', {ascending:false}).limit(100);
+  if (!error) MS[tid] = data.reverse();
+}
+async function markRead(t) {
+  if (!t || !isUnread(t)) return;
+  const col = t.user_a === UID ? 'a_read_at' : 'b_read_at', now = new Date(Math.max(Date.now(), Date.parse(t.last_at))).toISOString();
+  t[col] = now;
+  const [a] = await Promise.all([sb.from('dm_threads').update({[col]:now}).eq('id', t.id), sb.from('notifications').update({read_at:now}).eq('player_id', UID).eq('thread_id', t.id).is('read_at', null)]);
+  S.inbox.forEach(n => { if (n.tid === t.id) n.read = true; });
+  if (!a.error && S) render();
+}
+async function openChat(pid, extra) {
+  const t = threadWith(pid), back = sheet && (sheet.name === 'inbox' || sheet.name === 'player') ? sheet : null;
+  sheet = Object.assign({name:'chat', id:pid, back, stick:true}, extra || {}); render();
+  if (t) { await loadMsgs(t.id); if (sheet && sheet.name === 'chat' && sheet.id === pid) { render(); markRead(t); } }
+}
+async function sendDm(pid, text, gameId) {
+  const body = String(text || '').trim().slice(0, 1000); if (!body) return;
+  if (blockedBy(pid)) { toast('Unblock them first'); return; }
+  let t = threadWith(pid);
+  if (!t) {
+    const [a, b] = pair(pid);
+    let r = await sb.from('dm_threads').insert({user_a:a, user_b:b}).select('id,user_a,user_b,a_read_at,b_read_at,last_at,last_body,last_sender').single();
+    if (r.error) { r = await sb.from('dm_threads').select('id,user_a,user_b,a_read_at,b_read_at,last_at,last_body,last_sender').eq('user_a', a).eq('user_b', b).maybeSingle(); if (!r.data) { fail(r.error || {message:'Could not start the chat'}, 'Could not start the chat'); return; } }
+    t = r.data; S.threads.push(t);
+  }
+  const m = {id:-Date.now(), sender_id:UID, body, game_id:gameId || null, created_at:new Date().toISOString()};
+  (MS[t.id] = MS[t.id] || []).push(m); t.last_body = body.slice(0, 120); t.last_at = m.created_at; t.last_sender = UID;
+  if (sheet && sheet.name === 'chat') { sheet.stick = true; sheet.inv = false; } render();
+  const {data, error} = await sb.from('dm_messages').insert({thread_id:t.id, body, game_id:gameId || null}).select('id,sender_id,body,game_id,created_at').single();
+  if (error) { MS[t.id] = MS[t.id].filter(x => x !== m); fail(error, 'Message did not send'); render(); return; }
+  Object.assign(m, data);
+}
+function bubble(m) {
+  const mine = m.sender_id === UID, g = m.game_id && gm(m.game_id);
+  const card = m.game_id ? (g ? '<div class="inv" data-a="game" data-id="' + g.id + '"><b>' + esc(SPORTS[g.sport].short) + ' at ' + esc(g.place) + '</b><small>' + dayLabel(g.start) + ', ' + timeLabel(g.start) + ', ' + openSpots(g) + ' open</small><span>View game</span></div>' : '<div class="inv"><small>That game is over</small></div>') : '';
+  return '<div class="bub ' + (mine ? 'me' : 'them') + '">' + card + '<span>' + esc(m.body) + '</span><small>' + stampLabel(m.created_at) + '</small></div>';
+}
+function sheetChat(pid) {
+  const p = P(pid), t = threadWith(pid), msgs = t ? (MS[t.id] || []) : [], blocked = blockedBy(pid);
+  const games = myUpcoming().filter(g => openSpots(g) > 0 && !g.leagueId);
+  let body = '<div class="acts" style="margin:0 0 6px"><button class="chip" data-a="player" data-id="' + pid + '">View profile</button></div><div class="chat" aria-live="polite">' +
+    (msgs.length ? msgs.map(bubble).join('') : '<p class="hint" style="text-align:center;margin:26px 0">Say hi to ' + esc(first(p.name)) + ' and ask if they want to play.</p>') + '</div>';
+  let foot = '';
+  if (blocked) foot = '<p class="hint">You blocked this person. Unblock them from their profile to chat again.</p>';
+  else {
+    const sp = mySports()[0], word = sp ? sp.short : 'a game';
+    foot = (sheet.inv ? '<div class="invlist">' + (games.length ? games.map(g => '<button class="chip" data-a="sendinv" data-id="' + g.id + '" data-p="' + pid + '">' + esc(SPORTS[g.sport].short) + ' at ' + esc(g.place) + ', ' + dayLabel(g.start) + ' ' + timeLabel(g.start) + '</button>').join('') : '<p class="hint">You have no game with open spots. Post one with Play now, then invite them from here.</p>') + '</div>'
+      : '<div class="chips quick"><button class="chip" data-a="quick" data-t="Want to play ' + esc(word) + ' today?">Play today?</button><button class="chip" data-a="quick" data-t="Free this weekend?">Free this weekend?</button><button class="chip" data-a="invtoggle">Invite to a game</button></div>') +
+      '<div class="compose-row"><input class="inp" id="dmin" maxlength="1000" placeholder="Message ' + esc(first(p.name)) + '" aria-label="Message" autocomplete="off"><button class="btn solid" data-a="dmsend">Send</button></div>';
+  }
+  return sheetShell(p.name || 'Chat', body, foot);
+}
+function sheetInbox() {
+  const ts = S.threads.filter(t => t.last_sender && !blockedBy(otherOf(t))).sort((a, b) => Date.parse(b.last_at) - Date.parse(a.last_at));
+  const fr = friendIds().filter(id => { const t = threadWith(id); return !t || !t.last_sender; });
+  const body = (ts.length ? ts.map(t => { const p = P(otherOf(t)), un = isUnread(t); return '<div class="pl crow" data-a="chat" data-id="' + p.id + '">' + av(p, 'sm') + '<div class="grow"><b>' + esc(p.name || 'Player') + '</b><small class="clip">' + (t.last_sender === UID ? 'You: ' : '') + esc(t.last_body) + '</small></div><small>' + ago(Date.parse(t.last_at)) + '</small>' + (un ? '<span class="udot" aria-label="Unread"></span>' : '') + '</div>'; }).join('') : empty('No chats yet', 'Message a friend, or tap Message on anyone in Find.')) +
+    (fr.length ? '<h2 class="h2">Message a friend</h2>' + fr.map(id => { const p = P(id); return '<div class="pl crow" data-a="chat" data-id="' + id + '">' + av(p, 'sm') + '<div class="grow"><b>' + esc(p.name || 'Player') + '</b></div></div>'; }).join('') : '') +
+    '<button class="btn block ghost" style="margin-top:14px" data-a="tab" data-t="find" data-friends="1">Find people</button>';
+  return sheetShell('Chats', body, '');
+}
+
+/* feed */
+async function loadFeed() {
+  FD.tried = true;
+  const {data:posts, error} = await sb.from('posts').select('id,author_id,body,photo_path,sport,place,visibility,created_at').order('created_at', {ascending:false}).limit(60);
+  if (error) { fail(error, 'Could not load the feed'); return; }
+  const ids = posts.map(p => p.id);
+  const [lk, cm] = ids.length ? await Promise.all([sb.from('post_likes').select('post_id,player_id').in('post_id', ids), sb.from('post_comments').select('id,post_id,author_id,body,created_at').in('post_id', ids).order('id')]) : [{data:[]}, {data:[]}];
+  FD.posts = posts.filter(p => !blockedBy(p.author_id));
+  FD.likes = {}; (lk.data || []).forEach(x => { (FD.likes[x.post_id] = FD.likes[x.post_id] || []).push(x.player_id); });
+  FD.cmts = {}; (cm.data || []).forEach(x => { if (!blockedBy(x.author_id)) (FD.cmts[x.post_id] = FD.cmts[x.post_id] || []).push(x); });
+  FD.loaded = true;
+  const need = FD.posts.filter(p => p.photo_path && (!FD.urls[p.photo_path] || Date.now() - FD.urls[p.photo_path].t > 50 * 60000)).map(p => p.photo_path);
+  if (need.length) { const r = await sb.storage.from('photos').createSignedUrls(need, 3600); (r.data || []).forEach(x => { if (x.signedUrl) FD.urls[x.path] = {u:x.signedUrl, t:Date.now()}; }); }
+}
+function feedPosts() { const fr = new Set(friendIds()); return FD.posts.filter(p => FD.seg === 'everyone' || p.author_id === UID || fr.has(p.author_id)); }
+function postCard(p) {
+  const a = P(p.author_id), mine = p.author_id === UID, lk = FD.likes[p.id] || [], liked = lk.includes(UID), cm = (FD.cmts[p.id] || []).length, u = p.photo_path && FD.urls[p.photo_path];
+  return '<article class="card post"><div class="pl who" data-a="player" data-id="' + a.id + '">' + av(a, 'sm') + '<div><b>' + esc(mine ? 'You' : a.name || 'Player') + '</b><small>' + ago(Date.parse(p.created_at)) + (p.place ? ', ' + esc(p.place) : '') + (p.visibility === 'friends' ? ', friends only' : '') + '</small></div></div>' +
+    (p.sport && SPORTS[p.sport] ? '<div class="meta"><span class="tag">' + esc(SPORTS[p.sport].short) + '</span></div>' : '') +
+    (p.body ? '<p class="pbody">' + esc(p.body) + '</p>' : '') +
+    (p.photo_path ? (u ? '<img class="pphoto" src="' + esc(u.u) + '" alt="Photo posted by ' + esc(first(a.name)) + '" loading="lazy">' : '<div class="pphoto ph" role="img" aria-label="Photo loading"></div>') : '') +
+    '<div class="pacts"><button class="chip ' + (liked ? 'on' : '') + '" data-a="like" data-id="' + p.id + '" aria-pressed="' + liked + '">' + (liked ? 'Liked' : 'Like') + (lk.length ? ' ' + lk.length : '') + '</button><button class="chip" data-a="cmts" data-id="' + p.id + '">Comments' + (cm ? ' ' + cm : '') + '</button>' +
+    (mine ? '<button class="chip" data-a="postdel" data-id="' + p.id + '">' + (FD.cd === p.id ? 'Tap again to delete' : 'Delete') + '</button>' : '<button class="chip" data-a="flag" data-t="post" data-id="' + p.id + '">Report</button>') + '</div></article>';
+}
+function viewFeed() {
+  if (!FD.tried) loadFeed().then(() => { if (S) render(); });
+  const list = feedPosts(), sg = (id, l) => '<button class="' + (FD.seg === id ? 'on' : '') + '" data-a="fdseg" data-v="' + id + '">' + l + '</button>';
+  const none = FD.seg === 'friends' ? ['Nothing from friends yet', friendIds().length ? 'Post something, or check Everyone.' : 'Add friends in Find, or switch to Everyone.'] : ['No posts yet', 'Be the first. Share a photo from your game.'];
+  return '<section class="pad"><h1 class="hero" style="margin-bottom:6px;font-size:32px">Feed</h1>' +
+    '<button class="composer" data-a="newpost">' + av(S.me, 'sm') + '<span>Share a photo or an update</span></button>' +
+    '<div class="seg">' + sg('friends', 'Friends') + sg('everyone', 'Everyone') + '</div>' +
+    (FD.loaded ? (list.length ? list.map(postCard).join('') : '<div style="margin-top:14px">' + empty(none[0], none[1]) + '</div>') : '<p class="hint" style="margin-top:20px">Loading</p>') + '</section>';
+}
+async function toggleLike(id) {
+  const l = FD.likes[id] = FD.likes[id] || [], i = l.indexOf(UID);
+  if (i < 0) { l.push(UID); render(); const {error} = await sb.from('post_likes').insert({post_id:id}); if (error) { l.splice(l.indexOf(UID), 1); fail(error, 'Could not like that'); render(); } }
+  else { l.splice(i, 1); render(); const {error} = await sb.from('post_likes').delete().eq('post_id', id).eq('player_id', UID); if (error) { l.push(UID); fail(error, 'Could not undo that'); render(); } }
+}
+async function deletePost(id) {
+  if (FD.cd !== id) { FD.cd = id; render(); return; }
+  FD.cd = null; const p = FD.posts.find(x => x.id === id);
+  const {error} = await sb.from('posts').delete().eq('id', id); if (fail(error, 'Could not delete')) return;
+  if (p && p.photo_path) sb.storage.from('photos').remove([p.photo_path]).then(() => {});
+  FD.posts = FD.posts.filter(x => x.id !== id); render(); toast('Deleted');
+}
+async function openComments(id) {
+  if (!FD.posts.find(p => p.id === id)) await loadFeed();
+  if (!FD.posts.find(p => p.id === id)) { toast('That post is not available'); return; }
+  sheet = {name:'comments', id, back:null}; render();
+  if (S.inbox.some(n => n.pid === id && !n.read)) { S.inbox.forEach(n => { if (n.pid === id) n.read = true; }); sb.from('notifications').update({read_at:new Date().toISOString()}).eq('player_id', UID).eq('post_id', id).is('read_at', null).then(() => {}); }
+}
+function sheetComments(id) {
+  const p = FD.posts.find(x => x.id === id); if (!p) return '';
+  const list = FD.cmts[id] || [];
+  const body = (list.length ? list.map(c => { const a = P(c.author_id), can = c.author_id === UID || p.author_id === UID;
+    return '<div class="cm"><div class="pl">' + av(a, 'sm') + '<div class="grow"><b>' + esc(c.author_id === UID ? 'You' : a.name || 'Player') + '</b><small>' + ago(Date.parse(c.created_at)) + '</small></div></div><p>' + esc(c.body) + '</p><div class="acts" style="margin-top:4px">' +
+      (can ? '<button class="chip" data-a="cmdel" data-id="' + c.id + '">Delete</button>' : '') + (c.author_id !== UID ? '<button class="chip" data-a="flag" data-t="comment" data-id="' + c.id + '">Report</button>' : '') + '</div></div>'; }).join('') : '<p class="hint" style="margin-top:10px">No comments yet. Be the first.</p>');
+  return sheetShell('Comments', body, '<div class="compose-row"><input class="inp" id="cmin" maxlength="500" placeholder="Add a comment" aria-label="Comment" autocomplete="off"><button class="btn solid" data-a="cmsend">Send</button></div>');
+}
+async function sendComment() {
+  const i = $('#cmin'), v = i ? i.value.trim() : ''; if (!v) return; const id = sheet.id; i.value = '';
+  const {data, error} = await sb.from('post_comments').insert({post_id:id, body:v.slice(0, 500)}).select('id,post_id,author_id,body,created_at').single();
+  if (fail(error, 'Comment did not send')) { i.value = v; return; }
+  (FD.cmts[id] = FD.cmts[id] || []).push(data); render();
+}
+async function deleteComment(cid) {
+  const {error} = await sb.from('post_comments').delete().eq('id', cid); if (fail(error, 'Could not delete')) return;
+  Object.keys(FD.cmts).forEach(k => { FD.cmts[k] = FD.cmts[k].filter(c => String(c.id) !== String(cid)); }); render();
+}
+function newPost() { pst = {body:'', blob:null, prev:'', sport:'', place:'', vis:'public', busy:false}; sheet = {name:'post'}; render(); }
+function sheetPost() {
+  const sp = onSports();
+  const body = '<label class="field" style="margin-top:6px"><span class="lab">What is happening?</span><textarea class="inp" id="pbody" data-bind="pst.body" maxlength="1000" placeholder="Won our first game. Great day at the course.">' + esc(pst.body) + '</textarea></label>' +
+    (pst.prev ? '<img class="pphoto" src="' + pst.prev + '" alt="Your photo"><button class="btn ghost" style="margin-top:4px" data-a="photoclear">Remove photo</button>' : '<button class="btn block" data-a="photopick">Add a photo</button>') +
+    '<input type="file" id="pfile" accept="image/*" hidden>' +
+    (sp.length > 1 ? '<span class="lab" style="margin-top:16px">Sport (optional)</span><div class="chips">' + sp.map(s => '<button class="chip ' + (pst.sport === s.id ? 'on' : '') + '" data-a="pstsport" data-id="' + s.id + '">' + esc(s.short) + '</button>').join('') + '</div>' : '') +
+    '<label class="field"><span class="lab">Where (optional)</span><input class="inp" data-bind="pst.place" maxlength="80" value="' + esc(pst.place) + '" placeholder="Fresh Pond Golf Course"></label>' +
+    '<span class="lab">Who can see it</span><div class="seg" style="margin-top:0"><button class="' + (pst.vis === 'public' ? 'on' : '') + '" data-a="pstvis" data-v="public">Everyone</button><button class="' + (pst.vis === 'friends' ? 'on' : '') + '" data-a="pstvis" data-v="friends">Friends only</button></div>' +
+    '<p class="hint">Photos are resized and stripped of location data before they upload. Do not post anyone else\'s photo without asking them.</p>';
+  return sheetShell('New post', body, '<button class="btn solid block" data-a="postgo"' + (pst.busy ? ' disabled' : '') + '>' + (pst.busy ? 'Posting' : 'Post') + '</button>');
+}
+async function compress(file) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, {imageOrientation:'from-image'}); }
+  catch (e) { bmp = await new Promise((ok, no) => { const i = new Image(), u = URL.createObjectURL(file); i.onload = () => { URL.revokeObjectURL(u); ok(i); }; i.onerror = () => no(new Error('bad image')); i.src = u; }); }
+  const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise((ok, no) => c.toBlob(b => b ? ok(b) : no(new Error('encode')), 'image/jpeg', 0.82));
+}
+async function onPhoto(file) {
+  if (!pst) return;
+  if (!/^image\//.test(file.type)) { toast('Pick a photo'); return; }
+  if (file.size > 40e6) { toast('That photo is too big'); return; }
+  try { const b = await compress(file); if (pst.prev) URL.revokeObjectURL(pst.prev); pst.blob = b; pst.prev = URL.createObjectURL(b); render(); }
+  catch (e) { console.error(e); toast('Could not read that photo. Try a JPG or PNG'); }
+}
+async function submitPost() {
+  if (!pst || pst.busy) return; const body = pst.body.trim();
+  if (!body && !pst.blob) { toast('Add a photo or a few words'); return; }
+  pst.busy = true; render();
+  let path = null;
+  if (pst.blob) {
+    path = UID + '/' + crypto.randomUUID() + '.jpg';
+    const up = await sb.storage.from('photos').upload(path, pst.blob, {contentType:'image/jpeg', upsert:false});
+    if (up.error) { pst.busy = false; fail(up.error, 'The photo did not upload'); render(); return; }
+  }
+  const {error} = await sb.from('posts').insert({body, photo_path:path, sport:pst.sport || null, place:pst.place.trim().slice(0, 80) || null, visibility:pst.vis});
+  if (error) { if (path) sb.storage.from('photos').remove([path]); pst.busy = false; fail(error, 'Could not post'); render(); return; }
+  if (pst.prev) URL.revokeObjectURL(pst.prev);
+  pst = null; sheet = null; await loadFeed(); render(); toast('Posted');
+}
+
 /* ===== events ===== */
 const H = {
-  tab: el => setTab(el.dataset.t),
+  tab: el => { if (el.dataset.friends) { pf.group = el.dataset.friends === 'req' ? 'req' : 'friends'; fseg = 'people'; } setTab(el.dataset.t); },
+  inbox: () => { sheet = {name:'inbox'}; render(); },
+  chat: el => openChat(el.dataset.id),
+  askplay: el => openChat(el.dataset.id, {inv:true}),
+  dmsend: () => { const i = $('#dmin'); if (!i || !sheet || sheet.name !== 'chat') return; const v = i.value; i.value = ''; sendDm(sheet.id, v); },
+  quick: el => sendDm(sheet.id, el.dataset.t),
+  invtoggle: () => { sheet.inv = !sheet.inv; render(); },
+  sendinv: el => { const g = gm(el.dataset.id); if (g) sendDm(el.dataset.p, 'Want to join me for ' + SPORTS[g.sport].short.toLowerCase() + ' at ' + g.place + ', ' + dayLabel(g.start).toLowerCase() + ' at ' + timeLabel(g.start) + '?', g.id); },
+  pgroup: el => { pf.group = el.dataset.v; render(); },
+  addfr: el => addFriend(el.dataset.id),
+  fracc: el => answerFriend(el.dataset.id, true),
+  frno: el => answerFriend(el.dataset.id, false),
+  unfr: el => { if (!sheet.cfr) { sheet.cfr = true; render(); return; } sheet.cfr = false; answerFriend(el.dataset.id, false); },
+  blockuser: el => blockUser(el.dataset.id),
+  unblock: el => unblockUser(el.dataset.id),
+  flag: el => flagOpen(el.dataset.t, el.dataset.id),
+  flagsend: el => sendFlag(el.dataset.r),
+  fdseg: el => { FD.seg = el.dataset.v; render(); },
+  newpost: () => newPost(),
+  photopick: () => { const f = $('#pfile'); if (f) f.click(); },
+  photoclear: () => { if (pst.prev) URL.revokeObjectURL(pst.prev); pst.blob = null; pst.prev = ''; render(); },
+  pstsport: el => { pst.sport = pst.sport === el.dataset.id ? '' : el.dataset.id; render(); },
+  pstvis: el => { pst.vis = el.dataset.v; render(); },
+  postgo: () => submitPost(),
+  like: el => toggleLike(el.dataset.id),
+  postdel: el => deletePost(el.dataset.id),
+  cmts: el => openComments(el.dataset.id),
+  cmsend: () => sendComment(),
+  cmdel: el => deleteComment(el.dataset.id),
   compose: el => openCompose(el.dataset.m || 'broadcast'),
   close: () => closeSheet(),
   backdrop: (el, e) => { if (e.target === el) closeSheet(); },
@@ -986,11 +1291,12 @@ const H = {
   authback: () => { auth = {email:'', code:'', sent:false, busy:false}; render(); },
   signout: async () => { await sb.auth.signOut(); }
 };
-function setPath(path, v) { const [root, key] = path.split('.'); const o = {me:S && S.me, draft, F, auth, nc, nv, nl, tf, lf, rf, rs, rd, sf, bk}[root]; if (o) o[key] = v; }
+function setPath(path, v) { const [root, key] = path.split('.'); const o = {me:S && S.me, draft, F, auth, nc, nv, nl, tf, lf, rf, rs, rd, sf, bk, pst}[root]; if (o) o[key] = v; }
 document.addEventListener('click', e => { const el = e.target.closest('[data-a]'); if (!el || el.tagName === 'INPUT') return; const fn = H[el.dataset.a]; if (fn) fn(el, e); });
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.tagName === 'INPUT' && el.type === 'checkbox' && el.dataset.a) { H[el.dataset.a](el, e); return; }
+  if (el.id === 'pfile') { const f = el.files && el.files[0]; el.value = ''; if (f) onPhoto(f); return; }
   const b = el.dataset.bind; if (!b) return;
   let v = el.type === 'checkbox' ? el.checked : el.value;
   if (el.dataset.num) v = Number(v);
@@ -1005,7 +1311,7 @@ document.addEventListener('input', e => {
   if (el.tagName === 'SELECT' || el.type === 'checkbox') return;
   setPath(b, el.value); if (b.startsWith('me.')) { dirty = true; if (S.me.onboarded) saveMe(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && document.querySelector('.phead .x')) { closeSheet(); return; } if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return; const m = {email:'sendlink', code:'verify', cmt:'post', ncname:'nccreate', nvname:'nvcreate', nlname:'nlcreate', tfname:'mkteam'}[e.target.id]; if (m) { e.preventDefault(); H[m](e.target, e); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && document.querySelector('.phead .x')) { closeSheet(); return; } if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return; const m = {email:'sendlink', code:'verify', cmt:'post', ncname:'nccreate', nvname:'nvcreate', nlname:'nlcreate', tfname:'mkteam', dmin:'dmsend', cmin:'cmsend'}[e.target.id]; if (m) { e.preventDefault(); H[m](e.target, e); } });
 
 function route() {
   if (!UID || !S) { render(); return; }
@@ -1014,7 +1320,7 @@ function route() {
   if (!S.me.onboarded) { if (/^(game|league)\//.test(h)) store.set('wire.next', h); if (!sheet || (sheet.name !== 'onboard' && sheet.name !== 'newcomm' && sheet.name !== 'newvenue')) sheet = {name:'onboard'}; render(); return; }
   if (h.startsWith('game/')) { const id = h.slice(5); if (gm(id)) { openGame(id); return; } toast('That game is over or was cancelled'); }
   if (h.startsWith('league/')) { const id = h.slice(7); if (L(id)) { tab = 'leagues'; sheet = {name:'league', id, tab:'standings'}; render(); return; } toast('That league was not found'); }
-  if (['home', 'schedule', 'leagues', 'find', 'profile'].includes(h)) tab = h;
+  if (['home', 'schedule', 'feed', 'leagues', 'find', 'profile'].includes(h)) tab = h;
   render();
 }
 window.addEventListener('hashchange', route);
@@ -1024,7 +1330,7 @@ setInterval(() => { if (UID && S && !document.hidden && !sheet) render(); }, 600
 async function onSession(session) {
   const id = session && session.user ? session.user.id : null;
   if (id === UID && booted) return;
-  if (!id) { const h = location.hash.replace('#', ''); if (/^(game|league)\//.test(h)) store.set('wire.next', h); UID = null; S = null; sheet = null; if (channel) { sb.removeChannel(channel); channel = null; } booted = true; render(); return; }
+  if (!id) { const h = location.hash.replace('#', ''); if (/^(game|league)\//.test(h)) store.set('wire.next', h); UID = null; S = null; sheet = null; FD = {posts:[], likes:{}, cmts:{}, urls:{}, seg:'friends', loaded:false, tried:false, cd:null}; MS = {}; pst = null; if (channel) { sb.removeChannel(channel); channel = null; } booted = true; render(); return; }
   UID = id; EMAIL = session.user.email || ''; auth = {email:'', code:'', sent:false, busy:false};
   booted = true; render();
   await loadAll(); await pushState(); subscribe(); route();
