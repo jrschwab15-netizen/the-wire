@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#e8eef3">
-<meta name="description" content="Find a game tonight. The Wire pings nearby players who match your level and shows who is in.">
+<meta name="description" content="Find a game in any sport. The Wire pings nearby players who match your level, runs your league and shows who is in.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="The Wire">
 <link rel="manifest" href="./manifest.webmanifest">
@@ -168,6 +168,36 @@ details li{margin:6px 0 0 18px;color:var(--ink2);font-size:14px}
 a.btn{display:block;text-align:center;text-decoration:none;color:inherit;line-height:1.2}
 .facts a{color:var(--ball);font-weight:600}
 .note-row.read .pulse{background:var(--rail);animation:none;box-shadow:none}
+
+/* desktop and wide tablets: sidebar nav, roomier content, centered dialogs */
+.dk{display:none}
+@media (hover:hover){.game:hover{border-color:var(--steel)}.chip:hover:not(.on),.rb:hover:not(.on):not([disabled]),.btn:hover:not(.solid):not([disabled]),.note-row:hover{border-color:var(--steel)}.btn.solid:hover{opacity:.9}}
+@media (min-width:800px){
+  body{background:var(--snow)}
+  .shell.out{max-width:520px;box-shadow:none;background:transparent;padding-bottom:48px}
+  .shell.in{max-width:1180px;box-shadow:none;display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto 1fr;column-gap:32px;align-items:start;padding:0 28px 56px}
+  .shell.in .top{grid-column:1;grid-row:1;position:sticky;top:0;padding:22px 0 10px;background:var(--snow);z-index:6}
+  .shell.in .tabs{grid-column:1;grid-row:2;position:sticky;top:84px;left:auto;transform:none;width:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;background:none;border:0;padding:0}
+  .shell.in .tabs button.t{flex-direction:row;justify-content:flex-start;gap:12px;font-size:16px;padding:12px 14px;border-radius:12px}
+  .shell.in .tabs button.t.on{background:var(--panel);box-shadow:0 0 0 1px var(--rail)}
+  .shell.in .tabs .go{order:-1;width:100%;height:auto;margin:0 0 14px;border-radius:99px;padding:14px;font-size:17px;box-shadow:0 10px 30px var(--glow)}
+  .dk{display:inline;white-space:pre}
+  .shell.in main{grid-column:2;grid-row:1 / span 2;min-width:0;padding-top:14px}
+  .shell.in main .pad{padding:0}
+  .v-home .pad,.v-schedule .pad,.v-find .pad{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px;align-items:start}
+  .v-home .pad>*,.v-schedule .pad>*,.v-find .pad>*{grid-column:1/-1}
+  .v-home .pad>.game,.v-schedule .pad>.game,.v-find .pad>.game,.v-home .pad>.note-row{grid-column:auto}
+  .v-find .pad>.card{grid-column:auto}
+  .v-home .pad>.xl{display:none}
+  .v-find .pad>.seg,.v-schedule .pad>.seg{width:min(100%,460px)}
+  .v-find .pad>.two,.v-find .pad>.toggle{max-width:520px}
+  .v-profile .pad{max-width:680px}
+  .hero{font-size:44px}
+  .backdrop{align-items:center}
+  .panel{width:min(620px,92vw);max-height:88dvh;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)}
+  .sfoot{padding-bottom:14px}
+  .toast{bottom:32px}
+}
 </style>
 </head>
 <body>

@@ -316,7 +316,7 @@ function gameCard(g) {
 function header() { return '<header class="top"><div class="mark">' + LOGO + 'the wire</div>' + (S ? '<button data-a="tab" data-t="profile" aria-label="Your profile">' + av(S.me, '') + '</button>' : '') + '</header>'; }
 function tabbar() {
   const t = (id, ic, l) => '<button class="t ' + (tab === id ? 'on' : '') + '" data-a="tab" data-t="' + id + '"' + (tab === id ? ' aria-current="page"' : '') + '>' + ICON[ic] + l + '</button>';
-  return '<nav class="tabs" aria-label="Main">' + t('home', 'home', 'Home') + t('schedule', 'cal', 'Schedule') + '<button class="go" data-a="compose" data-m="broadcast" aria-label="Play now">Play</button>' + t('find', 'find', 'Find') + t('profile', 'me', 'You') + '</nav>';
+  return '<nav class="tabs" aria-label="Main">' + t('home', 'home', 'Home') + t('schedule', 'cal', 'Schedule') + '<button class="go" data-a="compose" data-m="broadcast" aria-label="Play now">Play<span class="dk"> now</span></button>' + t('find', 'find', 'Find') + t('profile', 'me', 'You') + '</nav>';
 }
 function viewAuth() {
   return '<section class="pad auth"><h1 class="hero">Who wants to play?</h1><p class="lede">Find a game in any sport, fill the open spot, run your league. Free, no ads.</p>' +
@@ -532,13 +532,14 @@ function renderSheet() {
   const nb = root.querySelector('.sbody'); if (nb && prev) nb.scrollTop = top;
 }
 function render() {
+  $('#app').className = 'shell ' + (booted && UID && S ? 'in' : 'out');
   const a = document.activeElement; let keep = null;
   if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.type !== 'checkbox' && a.type !== 'range') keep = {bind:a.dataset.bind, id:a.id, val:a.value, s:a.selectionStart, e:a.selectionEnd};
   if (!booted) $('#app').innerHTML = header() + '<main><div class="pad"><p class="hint" style="margin-top:40px">Loading</p></div></main>';
   else if (!UID || !S) { $('#app').innerHTML = header() + '<main>' + (UID ? '<div class="pad"><p class="hint" style="margin-top:40px">' + (loading ? 'Loading' : 'Could not load. Pull to refresh.') + '</p></div>' : viewAuth()) + '</main>'; $('#sheet-root').innerHTML = ''; document.body.classList.remove('lock'); }
   else {
     const v = {home:viewHome, schedule:viewSchedule, find:viewFind, profile:viewProfile}[tab]();
-    $('#app').innerHTML = header() + '<main>' + v + '</main>' + tabbar();
+    $('#app').innerHTML = header() + '<main class="v-' + tab + '">' + v + '</main>' + tabbar();
     renderSheet();
   }
   if (keep) { const el = keep.id ? document.getElementById(keep.id) : keep.bind ? document.querySelector('[data-bind="' + keep.bind + '"]') : null; if (el) { el.value = keep.val; el.focus(); try { el.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
@@ -607,7 +608,7 @@ document.addEventListener('input', e => {
   if (el.tagName === 'SELECT' || el.type === 'checkbox') return;
   setPath(b, el.value); if (b.startsWith('me.')) { dirty = true; if (S.me.onboarded) saveMe(); }
 });
-document.addEventListener('keydown', e => { if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return; const m = {email:'sendlink', code:'verify', cmt:'post', ncname:'nccreate', nvname:'nvcreate'}[e.target.id]; if (m) { e.preventDefault(); H[m](e.target, e); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && document.querySelector('.phead .x')) { closeSheet(); return; } if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return; const m = {email:'sendlink', code:'verify', cmt:'post', ncname:'nccreate', nvname:'nvcreate'}[e.target.id]; if (m) { e.preventDefault(); H[m](e.target, e); } });
 
 function route() {
   if (!UID || !S) { render(); return; }
